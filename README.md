@@ -1,2 +1,4 @@
-# maclookup
-Given a mac address, return the manufacturer
+maclookup
+===============
+
+given a MAC address, look up the manufacturer

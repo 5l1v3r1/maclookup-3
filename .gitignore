@@ -1,3 +1,10 @@
+maclookup
+.idea/
+*.project/
+*.workspace/
+.clang/
+.codelite/
+
 # Object files
 *.o
 *.ko
@@ -31,3 +38,6 @@
 # Debug files
 *.dSYM/
 *.su
+/CMakeLists.txt
+/obj/
+/cmake-build-debug/
