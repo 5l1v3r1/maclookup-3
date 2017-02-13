@@ -1,7 +1,7 @@
 CC      = gcc
 CFLAGS  += -Wall -Wextra
-LDFLAGS += -ldl -lpopt
-SRC	    = $(wildcard *.c)
+LDFLAGS += -ldl -lpopt -lcalg
+SRC     = $(wildcard *.c)
 OBJ     = $(patsubst %.c, obj/%.o, $(SRC))
 BIN     = maclookup
 
@@ -15,14 +15,14 @@ release: $(BIN)
     LDFLAGS += -Wl,--strip-all
 
 obj/%.o: %.c
-	$(CC) -c -o $@ $< $(CFLAGS) -DLOG_SCOPE=$(*F)
+	$(CC) -c -o $@ $< $(CFLAGS) -DLOG_SCOPE=$(*F) -D_LINE_COUNT=`wc -l $< | cut -d ' ' -f 1`
 
 $(BIN): $(OBJ)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 obj/logscopes.inc:
 	@echo "recreating" $@
-	mkdir -p $(@D)
+	@mkdir -p $(@D)
 	@echo "/*** automatically generated - do not edit ***/" > $@
 	@echo "typedef enum {" > $@
 	@echo $(foreach scope, $(wildcard *.c), kLog_$(basename $(scope)),) >> $@
@@ -32,7 +32,7 @@ obj/logscopes.inc:
 
 obj/logscopedefs.inc:
 	@echo "recreating" $@
-	mkdir -p $(@D)
+	@mkdir -p $(@D)
 	@echo "/*** automatically generated - do not edit ***/" > $@
 	@echo "void logLogInit( void ) {" >> $@
 	@echo $(foreach scope, $(wildcard *.c), "gLog[kLog_$(basename $(scope))].name = \"$(basename $(scope))\";" ) >> $@

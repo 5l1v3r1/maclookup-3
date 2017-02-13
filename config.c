@@ -197,23 +197,21 @@ tConfigOptions * parseConfiguration( int argc, const char *argv[] )
             argv = poptGetArgs( context );
 
             argc = 0;
-            while ( argv[argc] != NULL )
-                { ++argc; }
+            if (argv != NULL) {
+                while (argv[argc] != NULL) { ++argc; }
 
-            if ( argc > 0 )
-            {
-                argvCopy = calloc( argc + 1, sizeof(char *) );
+                if (argc > 0) {
+                    argvCopy = calloc(argc + 1, sizeof(char *));
 
-                if ( argvCopy != NULL )
-                {
-                    for ( i = 0; i < argc; ++i )
-                    {
-                        argvCopy[i] = strdup( argv[i] );
+                    if (argvCopy != NULL) {
+                        for (i = 0; i < argc; ++i) {
+                            argvCopy[i] = strdup(argv[i]);
+                        }
+                        argvCopy[i] = NULL;
+
+                        configOptions.argc = argc;
+                        configOptions.argv = argvCopy;
                     }
-                    argvCopy[i] = NULL;
-
-                    configOptions.argc = argc;
-                    configOptions.argv = argvCopy;
                 }
             }
         }
