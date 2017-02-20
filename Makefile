@@ -1,24 +1,26 @@
 CC      = gcc
 CFLAGS  += -Wall -Wextra
 LDFLAGS += -ldl -lpopt -lcalg
+
+TARGETS = generatemacdb maclookup
+TGTOBJ  = $(patsubst %, obj/%.o, $(TARGETS))
 SRC     = $(wildcard *.c)
 OBJ     = $(patsubst %.c, obj/%.o, $(SRC))
-BIN     = maclookup
 
-debug:   $(BIN)
+debug:   $(TARGETS)
     CFLAGS += -g
 #   CFLAGS += -finstrument-functions
     LDFLAGS += -Wl,--export-dynamic
 
-release: $(BIN)
+release: $(TARGETS)
     CFLAGS += -Werror
     LDFLAGS += -Wl,--strip-all
 
 obj/%.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS) -DLOG_SCOPE=$(*F) -D_LINE_COUNT=`wc -l $< | cut -d ' ' -f 1`
 
-$(BIN): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
+$(TARGETS):  $(OBJ)
+	$(CC) -o $@ obj/$@.o $(filter-out $(TGTOBJ), $^) $(LDFLAGS)
 
 obj/logscopes.inc:
 	@echo "recreating" $@
@@ -46,6 +48,6 @@ logging.c: obj/logscopedefs.inc
 *.c: logging.h
 
 clean:
-	rm -f obj/* $(BIN)
+	rm -f $(TARGETS) obj/*
 
 .PHONY: debug release clean

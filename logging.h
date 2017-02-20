@@ -10,18 +10,6 @@
 /* this is dynamically built by the Makefile */
 #include "obj/logscopes.inc"
 
-extern unsigned int     gLogLevel;
-extern int              gFunctionTraceEnabled;
-
-typedef struct {
-    const char     *name;
-    unsigned int    level;
-    unsigned int    max;
-    unsigned char  *site;
-} gLogEntry;
-
-extern gLogEntry gLog[kMaxLogScope];
-
 typedef enum {
     kLogEmergency = LOG_EMERG,
     kLogAlert     = LOG_ALERT,
@@ -32,6 +20,18 @@ typedef enum {
     kLogInfo      = LOG_INFO,
     kLogDebug     = LOG_DEBUG
 } tPriority;
+
+extern tPriority    gLogLevel;
+extern int          gFunctionTraceEnabled;
+
+typedef struct {
+    const char     *name;
+    tPriority       level;
+    unsigned int    max;
+    unsigned char  *site;
+} gLogEntry;
+
+extern gLogEntry gLog[kMaxLogScope];
 
 typedef enum { kLogToUndefined, kLogToSyslog, kLogToFile, kLogToStderr } eLogDestination;
 
@@ -72,9 +72,9 @@ void    _logWithLocation( const char *inFile, unsigned int atLine, tPriority pri
 # define logCheckpoint()    do {} while (0)
 #endif
 
-//#define logCheck_expand_again(priority, scope)  ( gLogLevel >= priority && gLog[kLog_##scope].level >= priority )
-//#define logCheck(priority, scope)       logCheck_expand_again(priority, scope)
-#define logCheck(priority, scope)       1
+#define logCheck_expand_again(priority, scope)  ( gLog[kLog_##scope].level >= priority )
+#define logCheck(priority, scope)       logCheck_expand_again(priority, scope)
+//#define logCheck(priority, scope)       1
 
 #define log(priority, ...)              do { if (  logCheck( priority, LOG_SCOPE ) ) _log( priority, __VA_ARGS__ ); } while (0)
 #define logWithLocation(priority, ...)  do { if (  logCheck( priority, LOG_SCOPE ) ) _logWithLocation( __FILE__, __LINE__, priority, __VA_ARGS__ ); } while (0)

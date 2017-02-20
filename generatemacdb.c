@@ -10,7 +10,6 @@
 #include <errno.h>      /* provides global variable errno */
 #include <string.h>     /* basic string functions */
 #include <ctype.h>
-#include <sys/mman.h>
 
 #include <libcalg-1.0/libcalg/trie.h>	/* C Algorithms -  http://fragglet.github.io/c-algorithms/ */
 #include <fcntl.h>
@@ -28,7 +27,6 @@
 
 const char *  gExecName;  /* base name of the executable, derived from argv[0]. Same for all processes */
 
-char toHex[] = { '0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f' };
 
 /* seed the bucket trie with common words that have the right Capitalization */
 const char *seedBucketTrie = "Inc Corp Corporation Co Ltd GmbH LLC Technology Electronics Solutions";
@@ -42,12 +40,9 @@ const char *seedBucketTrie = "Inc Corp Corporation Co Ltd GmbH LLC Technology El
  * bucket boundary
  */
 
-typedef char            tBucket[4];
-typedef unsigned short  tBucketIndex;           /* an index into the gBuckets array */
 Trie                   *gBucketTrie;            /* trie for storing pointers to the text fragments */
 unsigned long           gFragCount = 0;         /* total number of strings in gBuckets[] */
 unsigned long           gNextFreeBucket = 1;    /* next free bucket in gBuckets[] */
-tBucket                *gBuckets;
 
 /*
  * A company name is represented by an index into gCompanies[] and gCompaniesLen[],
@@ -56,36 +51,11 @@ tBucket                *gBuckets;
  * See assembleCompany() for the method to reassemble the company name.
  */
 
-typedef unsigned int    tCompanyIndex;
 Trie                   *gCompanyTrie;            /* trie for storing pointers to the company tuples */
 unsigned long           gCompanyCount = 0;
-tCompanyIndex           gNextFreeCompany = 0;
-tBucketIndex           *gCompanies;
-unsigned char          *gCompaniesLen;
+tCompanyIndex           gNextFreeCompany = 1;
 
-/* OUI related globals */
-
-typedef uint64_t tMACaddress;
-tMACaddress gMACBitsInUse = 0;
-
-tCompanyIndex *gMACtoCompany;
-
-/*
- * segments in the DB file for MMAP
- */
-const off_t   MAC_OFST         = 0;
-const size_t  MAC_LEN          = (UINT32_MAX >> 7) + 1;
-
-const off_t   BUCKET_OFST      = ((UINT32_MAX >> 7) + 1);
-const size_t  BUCKET_LEN       = ((UINT16_MAX + 1) * sizeof(tBucket));
-
-const off_t   COMPANY_OFST     = ((UINT32_MAX >> 7) + 1) + ((UINT16_MAX + 1) * sizeof(tBucket));
-const size_t  COMPANY_LEN      = ((UINT16_MAX + 1) * sizeof(uint16_t));
-
-const off_t   COMPANY_LEN_OFST = ((UINT32_MAX >> 7) + 1) + ((UINT16_MAX + 1) * (sizeof(tBucket) + sizeof(uint16_t)));
-const size_t  COMPANY_LEN_LEN  = ((UINT16_MAX + 1) * sizeof(uint8_t));
-
-const off_t   DB_EOF           = ((UINT16_MAX + 1)*7 + (UINT32_MAX >> 7) + 1);
+tMACaddr gMACBitsInUse = 0;
 
 
 /* Master's SIGCHLD handler.
@@ -203,75 +173,6 @@ char *trimTail( char *p )
     return p;
 }
 
-tMACaddress parseMAC( char *text, int len )
-{
-    tMACaddress     result = 0;
-    int             shift  = 48 - 4; /* a MAC address is 6 bytes (48 bits) long */
-
-    while ( len > 0 && shift >= 0 )
-    {
-        int c = tolower(*text);
-        if ( c >= '0' && c <= '9' )
-        {
-            result |= ((uint64_t)(c - '0') << shift);
-            shift -= 4;
-        }
-        else if ( c >= 'a' && c <= 'f' )
-        {
-            result |= ((uint64_t)(c - 'a' + 10) << shift);
-            shift -= 4;
-        }
-        else if (c == ':')
-        {
-            /* ignore, for convenience */
-        }
-        else break;
-
-        ++text;
-        --len;
-    }
-
-    gMACBitsInUse |= result;
-    return result;
-}
-
-/*
- * debugging code to visually check what comes out matches what goes in (semantically)
- */
-char * assembleCompany( tCompanyIndex company )
-{
-    size_t length = 0;
-    char *name;
-    tCompanyIndex co;
-
-    int count = gCompaniesLen[company];
-
-    /* first, figure out how much space to malloc */
-    co = company;
-    for ( int i = 0; i < count; ++i )
-    {
-        length += strlen( (char *)&gBuckets[gCompanies[co]] ) + 1; /* + 1 for trailing space */
-        ++co;
-    }
-
-    name = malloc( length + 1 );
-    if (name != NULL)
-    {
-        /* reassemble the company string from the fragments in gBucket[] */
-        name[0] = '\0';
-        co = company;
-        for ( int i = 0; i < count; ++i )
-        {
-            strcat(name, (char *) &gBuckets[gCompanies[co]]);
-            strcat(name, " ");
-            ++co;
-        }
-        /* nuke the trailing space */
-        name[strlen(name) - 1] = '\0';
-    }
-
-    return name;
-}
 
 /* make the key case-insensitive
  * avoids duplicates only differing in case.
@@ -331,7 +232,7 @@ tCompanyIndex tokenizeCompany( const char *company )
 
                         dest = (char *) &gBuckets[bucketIndex];
                         strcpy(dest, frag);
-                        //logInfo("    new: \"%s\"", dest );
+                        logDebug("    new: [0x%04x] = \"%s\"", bucketIndex, dest );
                     }
                 }
                 free(key);
@@ -344,10 +245,9 @@ tCompanyIndex tokenizeCompany( const char *company )
             } while ( frag != NULL);
         }
 
-        companyIndex = (tCompanyIndex) (uintptr_t) trie_lookup_binary(
-                                                           gCompanyTrie,
-                                                           (unsigned char *)&gCompanies[result],
-                                                           fragCount * sizeof(tBucketIndex) );
+        companyIndex = (tCompanyIndex) (uintptr_t) trie_lookup_binary( gCompanyTrie,
+                                                                       (unsigned char *)&gCompanies[result],
+                                                                       fragCount * sizeof(tBucketIndex) );
         if ( companyIndex == (tCompanyIndex)(uintptr_t) TRIE_NULL )
         {
             gCompaniesLen[result] = fragCount;
@@ -373,7 +273,6 @@ tCompanyIndex parseCompany( char *text, size_t len )
 {
     tCompanyIndex   result = 0;
     char           *str;
-    char           *reassembled;
 
     /* trim leading and trailing quote, if present */
     if ( text[0] == '\"' )
@@ -404,7 +303,7 @@ tCompanyIndex parseCompany( char *text, size_t len )
         }
         *p = '\0'; /* now it's a C string */
 
-        logInfo( "      company: \"%s\"", str );
+        logDebug( "      company: \"%s\"", str );
 
         /* The IEEE database is messy. Try to make capitalisation consistent,
          * so we don't end up with many duplicates differing only in case */
@@ -430,14 +329,12 @@ tCompanyIndex parseCompany( char *text, size_t len )
 
                 ++p;
             }
-            logInfo( "   case fixes: \"%s\"", str );
+            logDebug( "   case fixes: \"%s\"", str );
         }
 
-
         result = tokenizeCompany( str );
-        reassembled = assembleCompany( result );
 
-        logInfo( "  reassembled: \"%s\"", reassembled );
+        logDebug( "  reassembled: \"%s\"", assembleCompany( result ) );
 
         ++gCompanyCount;
 
@@ -452,7 +349,7 @@ int parseLine( char *line )
     struct {
         char         *text;
         unsigned int  len;
-    } field[100];
+    } field[20];
 
     int     quoted = 0;
     int     count  = 0;
@@ -489,21 +386,13 @@ int parseLine( char *line )
 
     //logDebug( "%s", line );
 
-    tMACaddress macAddress = parseMAC( field[1].text, field[1].len );
+    tMACaddr macAddress = parseMAC( field[1].text, field[1].len );
+    gMACBitsInUse |= macAddress;
+
     tCompanyIndex companyIndex = parseCompany( field[2].text, field[2].len );
 
-    logInfo("[%02x:%02x:%02x:%02x:%02x:%02x] = %04x",
-            (uint8_t)((macAddress >> 40) & 0xFF),
-            (uint8_t)((macAddress >> 32) & 0xFF),
-            (uint8_t)((macAddress >> 24) & 0xFF),
-            (uint8_t)((macAddress >> 16) & 0xFF),
-            (uint8_t)((macAddress >>  8) & 0xFF),
-            (uint8_t)((macAddress) & 0xFF),
-            companyIndex );
-
     uint32_t index = (uint32_t)((macAddress >> 24) & 0x00FFFFFF);
-    logInfo( "gMACtoCompany[%06lx] = %06x", &gMACtoCompany[ index ] - gMACtoCompany, index );
-    logInfo( "index = 0x%08x (%d)", index, index );
+
     gMACtoCompany[ index ] = companyIndex;
 
     return 0;
@@ -611,23 +500,6 @@ void dumpStructures( FILE *outputFile )
     fprintf(outputFile, "};\n");
 }
 
-void *mapFileToMemory( int fd, off_t offset, size_t length)
-{
-    int flags = MAP_SHARED | MAP_NORESERVE;
-    if ( length > 2*1024*1024 )
-    {
-        //flags |= MAP_HUGETLB;
-    }
-    void *result = mmap( NULL, length, PROT_READ | PROT_WRITE, flags, fd, offset );
-
-    logDebug( "%p = map from %08lx for %08lx bytes", result, offset, length);
-    if ( result == (unsigned char *)-1 )
-    {
-        logError( "unable to map file into memory (%d: %s)", errno, strerror(errno) );
-        exit( __COUNTER__ );
-    }
-    return result;
-}
 /*
  * Main entry point.
  * parse command line options and launch background process.
@@ -635,7 +507,7 @@ void *mapFileToMemory( int fd, off_t offset, size_t length)
  */
 int main( int argc, const char *argv[] )
 {
-    int             result;
+    int    result;
     tConfigOptions *config;
     int    i;
 
@@ -658,38 +530,13 @@ int main( int argc, const char *argv[] )
 
     logInfo("%s started", gExecName);
 
-    int dbfd = open( "oui.db", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
-
-    if (dbfd == -1)
-    {
-        logError( "Unable to open/create OUI DB file (%d: %s)", errno, strerror(errno) );
-        exit( __COUNTER__ );
-    }
-    else
-    {
-        int err = posix_fallocate( dbfd, 0, DB_EOF );
-        if ( err != 0 )
-        {
-            logError( "unable to allocate space for database file (%d: %s)", err, strerror(err) );
-        }
-    }
-
-    gMACtoCompany = mapFileToMemory( dbfd, MAC_OFST,         MAC_LEN );
-    gBuckets      = mapFileToMemory( dbfd, BUCKET_OFST,      BUCKET_LEN );
-    gCompanies    = mapFileToMemory( dbfd, COMPANY_OFST,     COMPANY_LEN );
-    gCompaniesLen = mapFileToMemory( dbfd, COMPANY_LEN_OFST, COMPANY_LEN_LEN );
-
-    for ( i = 7*1024*1024; i < (int)MAC_LEN; i += 65536 )
-    {
-        logDebug( "i = %08x", i);
-        gMACtoCompany[ i ] = 0;
-    }
+    mapDatabase();
 
     gBucketTrie  = trie_new();
     gCompanyTrie = trie_new();
     if ( gBucketTrie == NULL || gCompanyTrie == NULL )
     {
-        logError("unable to initialize database");
+        logCritical("unable to initialize database");
         exit( __COUNTER__ );
     }
 
@@ -705,40 +552,36 @@ int main( int argc, const char *argv[] )
     }
     else
     {
-        fprintf(stderr, "Fatal: Need at least one OUI CSV file to process\n");
+        logCritical("need at least one OUI CSV file to process");
+        exit( __COUNTER__ );
     }
 
-    logInfo( "MAC bits in use: %08lx", gMACBitsInUse );
+    logNotice( "MAC bits in use: %08llx", gMACBitsInUse );
 
     //dumpStructures( stdout );
 
     /* dump a bunch of statistics */
     unsigned long companyStorage = (sizeof(tBucketIndex) + sizeof(unsigned char)) * gNextFreeCompany;
     unsigned long bucketStorage  = gNextFreeBucket * sizeof(tBucket);
-    logInfo( "Number of Companies:   %lu (%s in short)",
-             gCompanyCount,
-             gCompanyCount > UINT16_MAX ? "Warning! does not fit" : "still fits");
-    logInfo( "Total company storage: %1.2f KBytes (avg %1.2f bytes each)",
-             companyStorage/1024.0,
-             companyStorage/(float)gCompanyCount );
+    logNotice( "Number of Companies:   %lu (%s in short)",
+               gCompanyCount,
+               gCompanyCount > UINT16_MAX ? "Warning! does not fit" : "still fits");
+    logNotice( "Total company storage: %1.2f KBytes (avg %1.2f bytes each)",
+               companyStorage/1024.0,
+               companyStorage/(float)gCompanyCount );
 
-    logInfo( "Number of Fragments:   %lu", gFragCount );
-    logInfo( "Number of Buckets:     %lu (%s in short)",
-             gNextFreeBucket,
-             gNextFreeBucket > UINT16_MAX ? "Warning! does not fit" : "still fits");
-    logInfo( "Total bucket storage:  %1.2f KBytes (avg %1.2f bytes each)",
-             bucketStorage/1024.0,
-             bucketStorage/(float)gFragCount );
+    logNotice( "Number of Fragments:   %lu", gFragCount );
+    logNotice( "Number of Buckets:     %lu (%s in short)",
+               gNextFreeBucket,
+               gNextFreeBucket > UINT16_MAX ? "Warning! does not fit" : "still fits");
+    logNotice( "Total bucket storage:  %1.2f KBytes (avg %1.2f bytes each)",
+               bucketStorage/1024.0,
+               bucketStorage/(float)gFragCount );
 
     trie_free( gBucketTrie );
     trie_free( gCompanyTrie );
 
-    munmap( gMACtoCompany, MAC_LEN );
-    munmap( gBuckets,      BUCKET_LEN );
-    munmap( gCompanies,    COMPANY_LEN );
-    munmap( gCompaniesLen, COMPANY_LEN_LEN );
-
-    close( dbfd );
+    unmapDatabase();
 
     stopLogging();
 

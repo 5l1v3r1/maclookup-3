@@ -43,13 +43,35 @@ const char *leader = "..........................................................
 const char *priorityToString[] =
 {
     [kLogEmergency] = "Emergency",
-    [kLogAlert]     =     "Alert",
-    [kLogCritical]  =  "Critical",
-    [kLogError]     =     "Error",
-    [kLogWarning]   =   "Warning",
-    [kLogNotice]    =    "Notice",
-    [kLogInfo]      =      "Info",
-    [kLogDebug]     =     "Debug"
+    [kLogAlert]     = "Alert",
+    [kLogCritical]  = "Critical",
+    [kLogError]     = "Error",
+    [kLogWarning]   = "Warning",
+    [kLogNotice]    = "Notice",
+    [kLogInfo]      = "Info",
+    [kLogDebug]     = "Debug"
+};
+
+#define TEXT_BKGND_BLACK    "\e[40m"
+#define TEXT_BKGND_RED      "\e[41m"
+#define TEXT_BKGND_GREEN    "\e[42m"
+#define TEXT_BKGND_YELLOW   "\e[43m"
+#define TEXT_BKGND_BLUE     "\e[44m"
+#define TEXT_BKGND_MAGENTA  "\e[45m"
+#define TEXT_BKGND_CYAN     "\e[46m"
+#define TEXT_BKGND_LGRAY    "\e[47m"
+#define TEXT_BKGND_DEFAULT  "\e[49m"
+
+const char *priorityToTerm[] =
+{
+    [kLogEmergency] = TEXT_BKGND_RED    " Emergency",
+    [kLogAlert]     = TEXT_BKGND_RED    "     Alert",
+    [kLogCritical]  = TEXT_BKGND_RED    "  Critical",
+    [kLogError]     = TEXT_BKGND_RED    "     Error",
+    [kLogWarning]   = TEXT_BKGND_YELLOW "   Warning",
+    [kLogNotice]    = TEXT_BKGND_YELLOW "    Notice",
+    [kLogInfo]      = TEXT_BKGND_BLACK  "      Info",
+    [kLogDebug]     = TEXT_BKGND_BLUE   "     Debug"
 };
 
 /* dynamically built by the Makefile */
@@ -93,11 +115,13 @@ void __cyg_profile_func_exit(void *this_fn, void *call_site)
 
 /********** DO NOT INSTRUMENT THE INSTRUMENTATION! **********/
 
+void setLogLevel( int logScope, tPriority level )
+{
+    gLog[logScope].level = level;
+}
 
 void initLogging( const char *name )
 {
-    int i;
-
     gLogName = name;
 
     // initialize globals to something safe until startLogging has been invoked
@@ -111,9 +135,9 @@ void initLogging( const char *name )
     // dynamically defined in logscopedefs.inc by Makefile
     logLogInit();
 
-   	for ( i = 0; i < kMaxLogScope; i++ )
+   	for (int i = 0; i < kMaxLogScope; ++i )
    	{
-        gLog[i].level = gLogLevel;
+        setLogLevel( i, gLogLevel );
     }
 
     if (gDLhandle != NULL)
@@ -127,14 +151,7 @@ void startLogging( unsigned int debugLevel, const char * logFile )
     gLogLevel = debugLevel;
     eLogDestination logDest;
 
-    if ( logFile != NULL )
-    {
-        logDest = kLogToFile;
-    }
-    else
-    {
-        logDest = kLogToStderr;
-    }
+    logDest = (logFile != NULL) ? kLogToFile : kLogToStderr;
 
     if (logDest != gLogDestination)
     {
@@ -205,10 +222,15 @@ void _logToTheVoid(unsigned int UNUSED(priority), const char * UNUSED(msg))  { /
 
 void _logToSyslog(unsigned int priority, const char *msg)   { syslog( priority, msg ); }
 
-void _logToFile(unsigned int priority, const char *msg)     { fprintf(gLogFile, "%s: %s\n", priorityToString[priority], msg); }
+void _logToFile(unsigned int priority, const char *msg)
+{
+    fprintf(gLogFile, "%s: %s\n", priorityToString[priority], msg);
+}
 
-void _logToStderr(unsigned int priority, const char *msg)   { fprintf(stderr, "%9s: %s\n", priorityToString[priority], msg); }
-
+void _logToStderr(unsigned int priority, const char *msg)
+{
+    fprintf(stderr, "%s:" TEXT_BKGND_DEFAULT " %s\n", priorityToTerm[priority], msg);
+}
 
 void _log(unsigned int priority, const char *format, ...)
 {
@@ -303,6 +325,7 @@ void __cyg_profile_func_exit(void *this_fn, void *call_site)
 {
     if (--gCallDepth < 1)
         gCallDepth = 1;
+
     if (gFunctionTraceEnabled)
     {
         _profileHelper(this_fn, "returned to", call_site);

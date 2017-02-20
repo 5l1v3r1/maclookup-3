@@ -14,7 +14,7 @@
 /* static data */
 
 static tConfigOptions  configOptions = {
-    kLogDebug,
+    kLogNotice,
     NULL,
     NULL,
     0,
@@ -30,11 +30,10 @@ static struct poptOption optionsVocab[] =
     /* longName, shortName, argInfo, arg, val, autohelp, autohelp arg */
     { "config",  'c', POPT_ARG_STRING, &configOptions.configFile, 1, "read Configuration from <file>",              "path to file" },
     { "logfile", 'l', POPT_ARG_STRING, &configOptions.logFile,    0, "send logging to <file>",                      "path to file" },
-    { "debug",   'd', POPT_ARG_INT,    &configOptions.debugLevel, 0, "set the amount of logging (syslog priority)", "debug level" },
+    { "debug",   'd', POPT_ARG_INT,    &configOptions.debugLevel, 0, "set the amount of logging (syslog priority)", "debug level"  },
     POPT_AUTOHELP
     POPT_TABLEEND
 };
-
 
 #pragma GCC diagnostic pop
 
